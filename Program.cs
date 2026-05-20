@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -117,6 +119,19 @@ builder.Services.AddMassTransit(x =>
 });
 # endregion
 
+# region Prometheus
+
+// Configuração do OpenTelemetry
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics => metrics
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("CatalogAPI"))
+        .AddAspNetCoreInstrumentation() // Métricas de requisições HTTP
+        .AddHttpClientInstrumentation() // Métricas de chamadas para outros microsserviços
+        .AddRuntimeInstrumentation()   // Métricas de CPU e Memória do .NET
+        .AddPrometheusExporter());     // Expõe as métricas
+
+# endregion
+
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<CatalogDbContext>("catalogdb");
 
@@ -132,5 +147,8 @@ app.MapHealthChecks("/health");
 app.MapGamesEndpoints();
 app.MapOrdersEndpoints();
 app.MapLibraryEndpoints();
+
+// Mapeia o endpoint para o Prometheus coletar
+app.MapPrometheusScrapingEndpoint();
 
 app.Run();
