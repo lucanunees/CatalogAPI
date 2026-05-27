@@ -1,154 +1,59 @@
-using System.Text;
-using CatalogAPI.API.Endpoints;
-using CatalogAPI.Consumers;
-using CatalogAPI.Infrastructure.Persistence;
-using Contracts.IntegrationEvents;
-using MassTransit;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-
+using Prometheus;
+using RedisCache.Library.Extensions;
+using CatalogAPI.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ─── Redis Cache via Kubernetes Secrets ────────────────────────
+var redisHost = Environment.GetEnvironmentVariable("REDIS_HOST") ?? "localhost";
+var redisPort = Environment.GetEnvironmentVariable("REDIS_PORT") ?? "6379";
+var redisPassword = Environment.GetEnvironmentVariable("REDIS_PASSWORD") ?? "";
 
-builder.Services.AddDbContext<CatalogDbContext>(opt =>
+var redisConnectionString = string.IsNullOrEmpty(redisPassword)
+    ? $"{redisHost}:{redisPort}"
+    : $"{redisHost}:{redisPort},password={redisPassword},abortConnect=false";
+
+builder.Services.AddRedisCache(options =>
 {
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("Default"));
+    options.ConnectionString = redisConnectionString;
+    options.KeyPrefix = "catalog:";
+    options.DefaultExpirationInMinutes = 60;
+    options.Enabled = true;
 });
 
-# region JWT (valida tokens do UsersAPI)
-var jwtIssuer = builder.Configuration["Jwt:Issuer"]!;
-var jwtAudience = builder.Configuration["Jwt:Audience"]!;
-var jwtKey = builder.Configuration["Jwt:Key"]!;
+// ─── Demais serviços (adicionar conforme necessidade) ──────────
+// builder.Services.AddDbContext<CatalogDbContext>(...);
+// builder.Services.AddMassTransit(...);
+// builder.Services.AddAuthentication(...);
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(opt =>
-    {
-        opt.RequireHttpsMetadata = false; // dev
-        opt.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateIssuerSigningKey = true,
-            ValidateLifetime = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ClockSkew = TimeSpan.FromSeconds(30)
-        };
-    });
-
-builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "CatalogAPI", Version = "v1" });
-
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Input your: Bearer {seu_token_jwt}"
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
-# endregion
-
-#region MassTransit + Outbox
-builder.Services.AddMassTransit(x =>
-{
-    x.AddEntityFrameworkOutbox<CatalogDbContext>(o =>
-    {
-        o.UsePostgres();
-        o.UseBusOutbox();
-        o.QueryDelay = TimeSpan.FromMilliseconds(10000);
-    });
-    
-    x.AddConsumer<PaymentProcessedConsumer>();
-    
-    x.UsingRabbitMq((context, cfg) =>
-    {
-        var host = builder.Configuration["RabbitMq:Host"];
-        var user = builder.Configuration["RabbitMq:Username"];
-        var pass = builder.Configuration["RabbitMq:Password"];
-        var vhost = builder.Configuration["RabbitMq:VirtualHost"] ?? "/";
-
-        cfg.Host(host, vhost, h =>
-        {
-            h.Username(user);
-            h.Password(pass);
-        });
-        
-        cfg.Message<OrderPlacedEventV1>(m => m.SetEntityName("fcg.catalog"));
-        cfg.Publish<OrderPlacedEventV1>(p => p.ExchangeType = "topic");
-
-        cfg.ReceiveEndpoint("catalog.payment-processed", e =>
-        {
-            e.ConfigureConsumeTopology = false;
-            e.Bind("fcg.payments", s =>
-            {
-                s.ExchangeType = "topic";
-                s.RoutingKey = "v1.payment-processed";
-            });
-            e.ConfigureConsumer<PaymentProcessedConsumer>(context);
-        });
-        
-        cfg.ConfigureEndpoints(context);
-    });
-});
-# endregion
-
-# region Prometheus
-
-// Configuração do OpenTelemetry
-builder.Services.AddOpenTelemetry()
-    .WithMetrics(metrics => metrics
-        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("CatalogAPI"))
-        .AddAspNetCoreInstrumentation() // Métricas de requisições HTTP
-        .AddHttpClientInstrumentation() // Métricas de chamadas para outros microsserviços
-        .AddRuntimeInstrumentation()   // Métricas de CPU e Memória do .NET
-        .AddPrometheusExporter());     // Expõe as métricas
-
-# endregion
-
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<CatalogDbContext>("catalogdb");
+builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+// ─── Swagger ───────────────────────────────────────────────────
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseHttpsRedirection();
 
+// ─── Prometheus — Métricas HTTP automáticas ────────────────────
+app.UseHttpMetrics(options =>
+{
+    options.AddCustomLabel("app", context => "catalog-api");
+});
+
+// ─── Health Check ──────────────────────────────────────────────
 app.MapHealthChecks("/health");
-app.MapGamesEndpoints();
-app.MapOrdersEndpoints();
-app.MapLibraryEndpoints();
 
-// Mapeia o endpoint para o Prometheus coletar
-app.MapPrometheusScrapingEndpoint();
+// ─── Prometheus — Endpoint /metrics ────────────────────────────
+app.MapMetrics();
+
+// ─── Endpoints ─────────────────────────────────────────────────
+app.MapGamesEndpoints();
 
 app.Run();

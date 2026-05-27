@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: fcg-tech-fase-2
+  labels:
+    app: catalog-api
+spec:
+  type: ClusterIP              # ClusterIP para serviços internos
+  
+  selector:
+    app: catalog-api
+  
+  ports:
+  - port: 80                   # Porta do service
+    targetPort: 80             # Porta do container
+    protocol: TCP
+    name: http
+  
+  sessionAffinity: None
+
+---
+# Service para acesso externo (opcional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api-external
+  namespace: fcg-tech-fase-2
+  labels:
+    app: catalog-api
+spec:
+  type: NodePort              # NodePort para Docker Desktop
+  
+  selector:
+    app: catalog-api
+  
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30003           # Porta externa no cluster
+    protocol: TCP
+    name: http

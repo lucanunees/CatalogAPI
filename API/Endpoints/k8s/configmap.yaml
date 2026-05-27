@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-config
+  namespace: fcg-tech-fase-2
+data:
+  # Database
+  database-name: "fcg_catalog_db"
+  database-port: "5432"
+  
+  # RabbitMQ Configuration
+  rabbitmq-vhost: "/"
+  exchange-catalog: "fcg.catalog"
+  exchange-payments: "fcg.payments"
+  queue-payment-processed: "catalog.payment-processed"
+  routing-key-payment: "v1.payment-processed"
+  
+  # JWT Configuration
+  jwt-issuer: "fcg.users"
+  jwt-audience: "fcg"
+  
+  # Application Settings
+  app-name: "Catalog API"
+  app-version: "v1.0.0"
+  
+  # Logging
+  log-level-default: "Information"
+  log-level-aspnetcore: "Warning"
+  log-level-ef-command: "None"
+  
+  # CORS (se necessário)
+  cors-origins: "http://localhost:3000,http://localhost:5173"
