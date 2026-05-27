@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: fcg-tech-fase-2
+  labels:
+    app: catalog-api
+    version: v1
+    component: api
+spec:
+  replicas: 2                    # Número de réplicas
+  
+  selector:
+    matchLabels:
+      app: catalog-api
+  
+  strategy:
+    type: RollingUpdate          # Estratégia de atualização
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      # Security Context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: catalog-api
+        image: davidjmarinho/catalog-api:v2    # ⭐ v2 com Prometheus + Cache
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        
+        # ========================================
+        # Variáveis de Ambiente
+        # ========================================
+        env:
+        # ASP.NET Core
+        - name: ASPNETCORE_ENVIRONMENT
+          value: Production
+        - name: ASPNETCORE_URLS
+          value: http://+:80
+        
+        # Database Connection String
+        - name: ConnectionStrings__Default
+          value: Host=$(DATABASE_HOST);Port=$(DATABASE_PORT);Database=$(DATABASE_NAME);Username=$(DATABASE_USER);Password=$(DATABASE_PASSWORD)
+        
+        # Database Components
+        - name: DATABASE_HOST
+          value: postgres
+        - name: DATABASE_PORT
+          value: "5432"
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: database-name
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: catalog-secret
+              key: db-username
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: catalog-secret
+              key: db-password
+        
+        # JWT Configuration
+        - name: Jwt__Issuer
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: jwt-issuer
+        - name: Jwt__Audience
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: jwt-audience
+        - name: Jwt__Key
+          valueFrom:
+            secretKeyRef:
+              name: catalog-secret
+              key: jwt-key
+        
+        # RabbitMQ
+        - name: RabbitMq__Host
+          value: rabbitmq
+        - name: RabbitMq__Username
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: username
+        - name: RabbitMq__Password
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: password
+        - name: RabbitMq__VirtualHost
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: rabbitmq-vhost
+        
+        # Redis Cache
+        - name: REDIS_HOST
+          value: redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: password
+        
+        # Logging
+        - name: Logging__LogLevel__Default
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: log-level-default
+        - name: Logging__LogLevel__Microsoft.AspNetCore
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: log-level-aspnetcore
+        - name: Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command
+          valueFrom:
+            configMapKeyRef:
+              name: catalog-config
+              key: log-level-ef-command
+        
+        # ========================================
+        # Resources
+        # ========================================
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        # ========================================
+        # Health Checks
+        # ========================================
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # ========================================
+        # Startup Probe (para inicialização lenta)
+        # ========================================
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+      
+      # ========================================
+      # Restart Policy
+      # ========================================
+      restartPolicy: Always
