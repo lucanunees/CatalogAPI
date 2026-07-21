@@ -66,5 +66,6 @@ app.MapMetrics();
 
 // ─── Endpoints ─────────────────────────────────────────────────
 app.MapGamesEndpoints();
+app.MapReviewsEndpoints();
 
 app.Run();
