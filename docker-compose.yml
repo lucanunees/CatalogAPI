@@ -23,10 +23,22 @@ services:
       RabbitMq__Password: guest
       RabbitMq__VirtualHost: /
 
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+
+      MONGO_HOST: mongo
+      MONGO_PORT: "27017"
+      MONGO_DB: catalog
+
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
 
     restart: unless-stopped
@@ -46,6 +58,38 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d catalogdb"]
       interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+
+  redis:
+    image: redis:7-alpine
+    container_name: catalog-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+
+  mongo:
+    image: mongo:7
+    container_name: catalog-mongo
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
@@ -99,4 +143,6 @@ services:
 
 volumes:
   pg_data:
+  redis_data:
+  mongo_data:
   grafana_data:
