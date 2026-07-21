@@ -1,6 +1,7 @@
 using Prometheus;
 using RedisCache.Library.Extensions;
 using CatalogAPI.Endpoints;
+using CatalogAPI.Infrastructure.Persistence.Mongo;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,16 @@ builder.Services.AddRedisCache(options =>
     options.DefaultExpirationInMinutes = 60;
     options.Enabled = true;
 });
+
+// ─── MongoDB (catálogo expandido + avaliações) ─────────────────
+var mongoHost = Environment.GetEnvironmentVariable("MONGO_HOST") ?? "localhost";
+var mongoPort = Environment.GetEnvironmentVariable("MONGO_PORT") ?? "27017";
+var mongoDb = Environment.GetEnvironmentVariable("MONGO_DB") ?? "catalog";
+var mongoConnectionString = $"mongodb://{mongoHost}:{mongoPort}";
+
+builder.Services.AddSingleton(new CatalogMongoContext(mongoConnectionString, mongoDb));
+builder.Services.AddScoped<IGameCatalogRepository, GameCatalogRepository>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 
 // ─── Demais serviços (adicionar conforme necessidade) ──────────
 // builder.Services.AddDbContext<CatalogDbContext>(...);
