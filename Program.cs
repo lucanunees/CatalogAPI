@@ -23,10 +23,12 @@ builder.Services.AddRedisCache(options =>
 });
 
 // ─── MongoDB (catálogo expandido + avaliações) ─────────────────
-var mongoHost = Environment.GetEnvironmentVariable("MONGO_HOST") ?? "localhost";
-var mongoPort = Environment.GetEnvironmentVariable("MONGO_PORT") ?? "27017";
-var mongoDb = Environment.GetEnvironmentVariable("MONGO_DB") ?? "catalog";
-var mongoConnectionString = $"mongodb://{mongoHost}:{mongoPort}";
+var mongoConnectionString = Environment.GetEnvironmentVariable("MONGO_CONNECTION_STRING")
+    ?? builder.Configuration["MongoDb:ConnectionString"]
+    ?? "mongodb://localhost:27017";
+var mongoDb = Environment.GetEnvironmentVariable("MONGO_DB")
+    ?? builder.Configuration["MongoDb:DatabaseName"]
+    ?? "catalog";
 
 builder.Services.AddSingleton(new CatalogMongoContext(mongoConnectionString, mongoDb));
 builder.Services.AddScoped<IGameCatalogRepository, GameCatalogRepository>();
