@@ -23,10 +23,19 @@ services:
       RabbitMq__Password: guest
       RabbitMq__VirtualHost: /
 
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+
+      MONGO_CONNECTION_STRING: mongodb+srv://joaopaulomoraescosta_db_user:p43MozqEkaPeqkRl@clusterfiap.63thrae.mongodb.net/?appName=ClusterFiap
+      MONGO_DB: catalog
+
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     restart: unless-stopped
@@ -46,6 +55,22 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d catalogdb"]
       interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+
+  redis:
+    image: redis:7-alpine
+    container_name: catalog-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
@@ -99,4 +124,5 @@ services:
 
 volumes:
   pg_data:
+  redis_data:
   grafana_data:
