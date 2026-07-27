@@ -1,6 +1,9 @@
 using CatalogAPI.Infrastructure.Persistence.Mongo;
 using CatalogAPI.Metrics;
 using RedisCache.Library.Interfaces;
+using CatalogAPI.Infrastructure.Persistence;
+using CatalogAPI.Domain.Elastic;
+using Elastic.Clients.Elasticsearch;
 
 namespace CatalogAPI.Endpoints;
 
@@ -72,7 +75,7 @@ public static class GamesEndpoints
         });
 
         // ─── POST /api/catalog/games ───────────────────────────
-        group.MapPost("/", async (CreateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService) =>
+        group.MapPost("/", async (CreateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
         {
             var document = new GameDocument
             {
@@ -88,15 +91,33 @@ public static class GamesEndpoints
 
             await repository.InsertAsync(document);
 
-            // Invalidar lista
+            // Invalidar lista do cache
             await cacheService.RemoveAsync("games:all");
+
+            // Adicionar também no Elasticsearch
+            try
+            {
+                var elasticCatalog = new ElasticCatalog
+                {
+                    Title = document.Name,
+                    PriceCents = (int)(document.Price * 100),
+                    Currency = "BRL"
+                };
+
+                await elasticClient.Create(elasticCatalog, "catalog");
+            }
+            catch (Exception ex)
+            {
+                // Log do erro, mas não falha a criação do game
+                Console.WriteLine($"Erro ao adicionar game no Elasticsearch: {ex.Message}");
+            }
 
             AppMetrics.GamesCreated.Inc();
             return Results.Created($"/api/catalog/games/{document.Id}", ToDto(document));
         });
 
         // ─── PUT /api/catalog/games/{id} ───────────────────────
-        group.MapPut("/{id}", async (string id, UpdateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService) =>
+        group.MapPut("/{id}", async (string id, UpdateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
         {
             var document = await repository.GetByIdAsync(id);
             if (document is null) return Results.NotFound();
@@ -114,6 +135,24 @@ public static class GamesEndpoints
             // Invalidar cache do jogo e da lista
             await cacheService.RemoveAsync($"games:{id}");
             await cacheService.RemoveAsync("games:all");
+
+            // Atualizar também no Elasticsearch
+            try
+            {
+                var elasticCatalog = new ElasticCatalog
+                {
+                    Title = document.Name,
+                    PriceCents = (int)(document.Price * 100),
+                    Currency = "BRL"
+                };
+
+                await elasticClient.Create(elasticCatalog, "catalog");
+            }
+            catch (Exception ex)
+            {
+                // Log do erro, mas não falha a atualização do game
+                Console.WriteLine($"Erro ao atualizar game no Elasticsearch: {ex.Message}");
+            }
 
             return Results.Ok(ToDto(document));
         });

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Elastic.Clients.Elasticsearch" Version="9.4.2" />
     <PackageReference Include="FIAPCloudGames2026.Contracts" Version="1.0.0" />
     <PackageReference Include="MassTransit" Version="8.0.11" />
     <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.0.11" />
