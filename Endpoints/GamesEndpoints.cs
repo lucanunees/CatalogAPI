@@ -1,3 +1,4 @@
+using CatalogAPI.Infrastructure.Persistence.Mongo;
 using CatalogAPI.Metrics;
 using RedisCache.Library.Interfaces;
 using CatalogAPI.Infrastructure.Persistence;
@@ -8,16 +9,13 @@ namespace CatalogAPI.Endpoints;
 
 public static class GamesEndpoints
 {
-    // In-memory store (substituir por DbContext quando implementado)
-    private static readonly Dictionary<Guid, GameDto> _games = new();
-
     public static void MapGamesEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/catalog/games")
             .WithTags("Games");
 
         // ─── GET /api/catalog/games ────────────────────────────
-        group.MapGet("/", async (ICacheService cacheService) =>
+        group.MapGet("/", async (IGameCatalogRepository repository, ICacheService cacheService) =>
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -34,7 +32,8 @@ public static class GamesEndpoints
 
             AppMetrics.CacheMisses.WithLabels("list_games").Inc();
 
-            var games = _games.Values.ToList();
+            var documents = await repository.GetAllAsync();
+            var games = documents.Select(ToDto).ToList();
             await cacheService.SetAsync(cacheKey, games, TimeSpan.FromMinutes(5));
 
             stopwatch.Stop();
@@ -43,7 +42,7 @@ public static class GamesEndpoints
         });
 
         // ─── GET /api/catalog/games/{id} ───────────────────────
-        group.MapGet("/{id:guid}", async (Guid id, ICacheService cacheService) =>
+        group.MapGet("/{id}", async (string id, IGameCatalogRepository repository, ICacheService cacheService) =>
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -60,12 +59,14 @@ public static class GamesEndpoints
 
             AppMetrics.CacheMisses.WithLabels("get_game").Inc();
 
-            if (!_games.TryGetValue(id, out var game))
+            var document = await repository.GetByIdAsync(id);
+            if (document is null)
             {
                 stopwatch.Stop();
                 return Results.NotFound();
             }
 
+            var game = ToDto(document);
             await cacheService.SetAsync(cacheKey, game, TimeSpan.FromMinutes(15));
 
             stopwatch.Stop();
@@ -74,19 +75,21 @@ public static class GamesEndpoints
         });
 
         // ─── POST /api/catalog/games ───────────────────────────
-        group.MapPost("/", async (CreateGameRequest request, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
+        group.MapPost("/", async (CreateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
         {
-            var game = new GameDto
+            var document = new GameDocument
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.NewGuid().ToString(),
                 Name = request.Name,
                 Description = request.Description,
                 Price = request.Price,
                 Category = request.Category,
+                Tags = request.Tags ?? new List<string>(),
+                Screenshots = request.Screenshots ?? new List<string>(),
                 CreatedAt = DateTime.UtcNow
             };
 
-            _games[game.Id] = game;
+            await repository.InsertAsync(document);
 
             // Invalidar lista do cache
             await cacheService.RemoveAsync("games:all");
@@ -96,8 +99,8 @@ public static class GamesEndpoints
             {
                 var elasticCatalog = new ElasticCatalog
                 {
-                    Title = game.Name,
-                    PriceCents = (int)(game.Price * 100),
+                    Title = document.Name,
+                    PriceCents = (int)(document.Price * 100),
                     Currency = "BRL"
                 };
 
@@ -110,21 +113,24 @@ public static class GamesEndpoints
             }
 
             AppMetrics.GamesCreated.Inc();
-            return Results.Created($"/api/catalog/games/{game.Id}", game);
+            return Results.Created($"/api/catalog/games/{document.Id}", ToDto(document));
         });
 
         // ─── PUT /api/catalog/games/{id} ───────────────────────
-        group.MapPut("/{id:guid}", async (Guid id, UpdateGameRequest request, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
+        group.MapPut("/{id}", async (string id, UpdateGameRequest request, IGameCatalogRepository repository, ICacheService cacheService, IElasticClient<ElasticCatalog> elasticClient) =>
         {
-            if (!_games.TryGetValue(id, out var game))
-                return Results.NotFound();
+            var document = await repository.GetByIdAsync(id);
+            if (document is null) return Results.NotFound();
 
-            game.Name = request.Name ?? game.Name;
-            game.Description = request.Description ?? game.Description;
-            game.Price = request.Price ?? game.Price;
-            game.Category = request.Category ?? game.Category;
+            document.Name = request.Name ?? document.Name;
+            document.Description = request.Description ?? document.Description;
+            document.Price = request.Price ?? document.Price;
+            document.Category = request.Category ?? document.Category;
+            document.Tags = request.Tags ?? document.Tags;
+            document.Screenshots = request.Screenshots ?? document.Screenshots;
+            document.UpdatedAt = DateTime.UtcNow;
 
-            _games[id] = game;
+            await repository.UpdateAsync(document);
 
             // Invalidar cache do jogo e da lista
             await cacheService.RemoveAsync($"games:{id}");
@@ -135,8 +141,8 @@ public static class GamesEndpoints
             {
                 var elasticCatalog = new ElasticCatalog
                 {
-                    Title = game.Name,
-                    PriceCents = (int)(game.Price * 100),
+                    Title = document.Name,
+                    PriceCents = (int)(document.Price * 100),
                     Currency = "BRL"
                 };
 
@@ -148,14 +154,14 @@ public static class GamesEndpoints
                 Console.WriteLine($"Erro ao atualizar game no Elasticsearch: {ex.Message}");
             }
 
-            return Results.Ok(game);
+            return Results.Ok(ToDto(document));
         });
 
         // ─── DELETE /api/catalog/games/{id} ────────────────────
-        group.MapDelete("/{id:guid}", async (Guid id, ICacheService cacheService) =>
+        group.MapDelete("/{id}", async (string id, IGameCatalogRepository repository, ICacheService cacheService) =>
         {
-            if (!_games.Remove(id))
-                return Results.NotFound();
+            var deleted = await repository.DeleteAsync(id);
+            if (!deleted) return Results.NotFound();
 
             // Invalidar cache do jogo e da lista
             await cacheService.RemoveAsync($"games:{id}");
@@ -164,16 +170,34 @@ public static class GamesEndpoints
             return Results.NoContent();
         });
     }
+
+    internal static GameDto ToDto(GameDocument document) => new()
+    {
+        Id = document.Id,
+        Name = document.Name,
+        Description = document.Description,
+        Price = document.Price,
+        Category = document.Category,
+        Tags = document.Tags,
+        Screenshots = document.Screenshots,
+        AverageRating = document.AverageRating,
+        ReviewCount = document.ReviewCount,
+        CreatedAt = document.CreatedAt
+    };
 }
 
 // ─── DTOs ──────────────────────────────────────────────────────
 public class GameDto
 {
-    public Guid Id { get; set; }
+    public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public decimal Price { get; set; }
     public string Category { get; set; } = string.Empty;
+    public List<string> Tags { get; set; } = new();
+    public List<string> Screenshots { get; set; } = new();
+    public double? AverageRating { get; set; }
+    public int ReviewCount { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -183,6 +207,8 @@ public class CreateGameRequest
     public string Description { get; set; } = string.Empty;
     public decimal Price { get; set; }
     public string Category { get; set; } = string.Empty;
+    public List<string>? Tags { get; set; }
+    public List<string>? Screenshots { get; set; }
 }
 
 public class UpdateGameRequest
@@ -191,4 +217,6 @@ public class UpdateGameRequest
     public string? Description { get; set; }
     public decimal? Price { get; set; }
     public string? Category { get; set; }
+    public List<string>? Tags { get; set; }
+    public List<string>? Screenshots { get; set; }
 }

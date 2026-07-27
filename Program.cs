@@ -1,11 +1,10 @@
 using Prometheus;
 using RedisCache.Library.Extensions;
 using CatalogAPI.Endpoints;
-using MassTransit.Configuration;
 using CatalogAPI.Infrastructure.Persistence;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Transport;
-using Microsoft.Extensions.Options;
+using CatalogAPI.Infrastructure.Persistence.Mongo;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,7 +28,21 @@ builder.Services.AddRedisCache(options =>
 
 #endregion
 
-#region // --- Demais servicos (adicionar conforme necessidade) ---
+#region ─── MongoDB (catálogo expandido + avaliações) ─────────────────
+
+var mongoConnectionString = Environment.GetEnvironmentVariable("MONGO_CONNECTION_STRING")
+    ?? builder.Configuration["MongoDb:ConnectionString"]
+    ?? "mongodb://localhost:27017";
+var mongoDb = Environment.GetEnvironmentVariable("MONGO_DB")
+    ?? builder.Configuration["MongoDb:DatabaseName"]
+    ?? "catalog";
+#endregion
+
+builder.Services.AddSingleton(new CatalogMongoContext(mongoConnectionString, mongoDb));
+builder.Services.AddScoped<IGameCatalogRepository, GameCatalogRepository>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
+
+#region ─── Demais serviços (adicionar conforme necessidade) ──────────
 // builder.Services.AddDbContext<CatalogDbContext>(...);
 // builder.Services.AddMassTransit(...);
 // builder.Services.AddAuthentication(...);
@@ -85,10 +98,12 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 #region // --- Prometheus - Metricas HTTP automaticas ---
+
 app.UseHttpMetrics(options =>
 {
     options.AddCustomLabel("app", context => "catalog-api");
 });
+
 #endregion
 
 #region // --- Health Check ---
@@ -107,7 +122,9 @@ app.MapMetrics();
 
 app.MapGamesEndpoints();
 app.MapSearchEndpoints();
+app.MapReviewsEndpoints();
 
 #endregion
+
 
 app.Run();
