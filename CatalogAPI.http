@@ -1,5 +1,40 @@
 @CatalogAPI_HostAddress = http://localhost:5187
 
+### ========================================
+### 🔍 BUSCA NO ELASTICSEARCH - SEARCH
+### ========================================
+
+### 1. Busca simples
+GET {{CatalogAPI_HostAddress}}/api/catalog/search/products?q=xiaomi
+Accept: application/json
+
+###
+
+### 2. Busca com erro de digitação (Fuzzy) - "samsng" encontra "samsung"
+GET {{CatalogAPI_HostAddress}}/api/catalog/search/products?q=samsng
+Accept: application/json
+
+###
+
+### 3. Busca com paginação
+GET {{CatalogAPI_HostAddress}}/api/catalog/search/products?q=iphone&page=1&pageSize=5
+Accept: application/json
+
+###
+
+### 4. Busca segunda página
+GET {{CatalogAPI_HostAddress}}/api/catalog/search/products?q=iphone&page=2&pageSize=5
+Accept: application/json
+
+###
+
+### 5. Busca com query vazia (retorna erro 400)
+GET {{CatalogAPI_HostAddress}}/api/catalog/search/products?q=
+Accept: application/json
+
+###
+
+### LEGACY - Weather Forecast
 GET {{CatalogAPI_HostAddress}}/weatherforecast/
 Accept: application/json
 
