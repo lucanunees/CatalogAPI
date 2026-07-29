@@ -6,8 +6,8 @@ namespace CatalogAPI.Infrastructure.Persistence
 
     public interface IElasticClient<T>
     {
-        Task<IReadOnlyCollection<T>> GetCatalogAsync(IndexName indexName);
-        Task<bool> Create(T log, IndexName index);
+        Task<IReadOnlyCollection<T>> GetCatalogAsync(string indexName);
+        Task<bool> Create(T catalog, string index);
     }
     public class ElasticClient<T> : IElasticClient<T>
     {
@@ -20,16 +20,16 @@ namespace CatalogAPI.Infrastructure.Persistence
 
             this._client = new ElasticsearchClient(settings_client);
         }
-        public async Task<bool> Create(T log, IndexName index)
+        public async Task<bool> Create(T catalog, string index)
         {
-           var response = await this._client.IndexAsync(log, index.ToString());
+            var response = await this._client.IndexAsync(catalog, index);
 
             if (response.IsValidResponse)
                 return true;
             return false;
         }
 
-        public async Task<IReadOnlyCollection<T>> GetCatalogAsync(IndexName indexName)
+        public async Task<IReadOnlyCollection<T>> GetCatalogAsync(string indexName)
         {
             var response = await this._client.SearchAsync<T>(indexName);
             return response.Documents;

@@ -100,7 +100,7 @@ public static class GamesEndpoints
                 var elasticCatalog = new ElasticCatalog
                 {
                     Title = document.Name,
-                    PriceCents = (int)(document.Price * 100),
+                    PriceCents = (decimal)(document.Price * 100),
                     Currency = "BRL"
                 };
 
@@ -142,7 +142,7 @@ public static class GamesEndpoints
                 var elasticCatalog = new ElasticCatalog
                 {
                     Title = document.Name,
-                    PriceCents = (int)(document.Price * 100),
+                    PriceCents = (decimal)(document.Price * 100),
                     Currency = "BRL"
                 };
 
