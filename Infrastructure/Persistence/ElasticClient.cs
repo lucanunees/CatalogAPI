@@ -15,17 +15,22 @@ namespace CatalogAPI.Infrastructure.Persistence
 
         public ElasticClient(IElasticSettings settings)
         {
-            var settings_client = new ElasticsearchClientSettings(new Uri(settings.CloudId))
-                .Authentication(new BasicAuthentication(settings.CloudId, settings.ApiKey));
+            var clientSettings = new ElasticsearchClientSettings(
+                 new Uri(settings.CloudId))
+                 .Authentication(new ApiKey(settings.ApiKey));
 
-            this._client = new ElasticsearchClient(settings_client);
+            this._client = new ElasticsearchClient(clientSettings);
         }
         public async Task<bool> Create(T catalog, string index)
         {
-            var response = await this._client.IndexAsync(catalog, index);
+            var response = await _client.IndexAsync(catalog, x => x.Index(index));
+
 
             if (response.IsValidResponse)
                 return true;
+
+            // Log do erro
+            Console.WriteLine($"Erro ao criar documento no Elasticsearch: {response.DebugInformation}");
             return false;
         }
 

@@ -99,6 +99,7 @@ public static class GamesEndpoints
             {
                 var elasticCatalog = new ElasticCatalog
                 {
+                    Id = document.Id,
                     Title = document.Name,
                     PriceCents = (decimal)(document.Price * 100),
                     Currency = "BRL"
@@ -110,6 +111,7 @@ public static class GamesEndpoints
             {
                 // Log do erro, mas não falha a criação do game
                 Console.WriteLine($"Erro ao adicionar game no Elasticsearch: {ex.Message}");
+                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
             }
 
             AppMetrics.GamesCreated.Inc();
