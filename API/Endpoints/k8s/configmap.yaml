@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: catalog-config
-  namespace: fcg-tech-fase-2
+  namespace: fcg-tech-fase-4
 data:
   # Database
   database-name: "fcg_catalog_db"
@@ -16,8 +16,8 @@ data:
   routing-key-payment: "v1.payment-processed"
   
   # JWT Configuration
-  jwt-issuer: "fcg.users"
-  jwt-audience: "fcg"
+  jwt-issuer: "UsersAPI"
+  jwt-audience: "TechChallengeApp"  
   
   # Application Settings
   app-name: "Catalog API"

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: catalog-api
-  namespace: fcg-tech-fase-2
+  namespace: fcg-tech-fase-4
   labels:
     app: catalog-api
     version: v1
@@ -39,7 +39,7 @@ spec:
       
       containers:
       - name: catalog-api
-        image: davidjmarinho/catalog-api:v2    # ⭐ v2 com Prometheus + Cache
+        image: 159924930744.dkr.ecr.us-east-1.amazonaws.com/catalogapi:v5
         imagePullPolicy: Always
         
         ports:
@@ -51,6 +51,8 @@ spec:
         # Variáveis de Ambiente
         # ========================================
         env:
+        - name: Swagger__Enabled
+          value: "true"
         # ASP.NET Core
         - name: ASPNETCORE_ENVIRONMENT
           value: Production
@@ -71,16 +73,27 @@ spec:
             configMapKeyRef:
               name: catalog-config
               key: database-name
+        
         - name: DATABASE_USER
           valueFrom:
             secretKeyRef:
-              name: catalog-secret
-              key: db-username
+              name: postgres-secret
+              key: catalog-username
+
         - name: DATABASE_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: catalog-secret
-              key: db-password
+              name: postgres-secret
+              key: catalog-password
+        
+        - name: MONGO_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: catalog-mongodb-secret
+              key: connection-string
+
+        - name: MONGO_DB
+          value: catalog
         
         # JWT Configuration
         - name: Jwt__Issuer
@@ -128,6 +141,19 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: password
+        
+        # Elasticsearch
+        - name: ELASTIC_CLOUD_ID
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-secret
+              key: cloud-id
+
+        - name: ELASTIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-secret
+              key: api-key
         
         # Logging
         - name: Logging__LogLevel__Default
