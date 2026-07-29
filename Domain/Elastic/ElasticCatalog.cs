@@ -1,9 +1,12 @@
 ﻿using System.Text.Json.Serialization;
+using Elastic.Clients.Elasticsearch;
 
 namespace CatalogAPI.Domain.Elastic
 {
     public class ElasticCatalog     
     {
+        [JsonIgnore]
+        public string? Id { get; set; }
 
         [JsonPropertyName("Title")]
         public string Title { get; set; } = string.Empty;
